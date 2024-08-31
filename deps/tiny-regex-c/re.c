@@ -248,13 +248,14 @@ re_t re_compile(const char* pattern)
   return (re_t) re_compiled;
 }
 
-void re_print(regex_t* pattern)
+int re_to_str(re_t pattern, char *buffer, int bufferlen)
 {
-  const char* types[] = { "RE_UNUSED", "RE_DOT", "RE_BEGIN", "RE_END", "RE_QUESTIONMARK", "RE_STAR", "RE_PLUS", "RE_CHAR", "RE_CHAR_CLASS", "RE_INV_CHAR_CLASS", "RE_DIGIT", "RE_NOT_DIGIT", "RE_ALPHA", "RE_NOT_ALPHA", "RE_WHITESPACE", "RE_NOT_WHITESPACE", "BRANCH" };
+  const char* types[] = { "UNUSED", "DOT", "BEGIN", "END", "QUESTIONMARK", "STAR", "PLUS", "CHAR", "CHAR_CLASS", "INV_CHAR_CLASS", "DIGIT", "NOT_DIGIT", "ALPHA", "NOT_ALPHA", "WHITESPACE", "NOT_WHITESPACE", "BRANCH" };
 
   int i;
   int j;
   char c;
+  int n = 0;
   for (i = 0; i < MAX_REGEXP_OBJECTS; ++i)
   {
     if (pattern[i].type == RE_UNUSED)
@@ -262,10 +263,10 @@ void re_print(regex_t* pattern)
       break;
     }
 
-    printf("type: %s", types[pattern[i].type]);
+    n += snprintf(buffer + n, bufferlen - n, "type: %s", types[pattern[i].type]);
     if (pattern[i].type == RE_CHAR_CLASS || pattern[i].type == RE_INV_CHAR_CLASS)
     {
-      printf(" [");
+      n += snprintf(buffer + n, bufferlen - n, " [");
       for (j = 0; j < MAX_CHAR_CLASS_LEN; ++j)
       {
         c = pattern[i].u.ccl[j];
@@ -273,16 +274,17 @@ void re_print(regex_t* pattern)
         {
           break;
         }
-        printf("%c", c);
+        n += snprintf(buffer + n, bufferlen - n, "%c", c);
       }
-      printf("]");
+      n += snprintf(buffer + n, bufferlen - n, "]");
     }
     else if (pattern[i].type == RE_CHAR)
     {
-      printf(" '%c'", pattern[i].u.ch);
+      n += snprintf(buffer + n, bufferlen - n, " '%c'", pattern[i].u.ch);
     }
-    printf("\n");
+    n += snprintf(buffer + n, bufferlen - n, "\n");
   }
+  return n;
 }
 
 

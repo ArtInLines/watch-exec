@@ -57,6 +57,8 @@ int re_matchp(re_t pattern, const char* text, int* matchlength);
 /* Find matches of the txt pattern inside text (will compile automatically first). */
 int re_match(const char* pattern, const char* text, int* matchlength);
 
+/* Write the regular expression as a string to buffer */
+int re_to_str(re_t pattern, char *buffer, int bufferlen);
 
 #ifdef __cplusplus
 }

@@ -156,7 +156,7 @@ ProcRes proc_exec(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
         log_err("Cannot run empty command");
         return res;
     }
-    log_info("Running '%s'", arg_str);
+    log_info("Running '%s'...", arg_str);
 #ifdef _WIN32
     ProcOSPipe pipe_read, pipe_write;
     SECURITY_ATTRIBUTES saAttr = {0};
@@ -256,7 +256,7 @@ b32 re_matches(re_t regex, const char *str)
 {
     int len;
     int idx = re_matchp(regex, str, &len);
-    return idx;
+    return idx >= 0;
 }
 
 internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const char* root_dir, const char* filepath, const char* oldfilepath, void* user_data)
@@ -265,7 +265,7 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
     AIL_UNUSED(watch_id);
 
     b32 matched = 0;
-    for (u32 i = 0; i < regexs.len && !matched; i++) {
+    for (u32 i = 0; !matched && i < regexs.len; i++) {
         matched = re_matches(regexs.data[i], filepath);
         if (oldfilepath) matched |= re_matches(regexs.data[i], filepath);
     }
@@ -273,16 +273,16 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
 
     switch (action) {
         case DMON_ACTION_CREATE:
-            log_info("Created [%s]%s...", root_dir, filepath);
+            log_info("Created %s%s...", root_dir, filepath);
             break;
         case DMON_ACTION_DELETE:
-            log_info("Deleted [%s]%s...", root_dir, filepath);
+            log_info("Deleted %s%s...", root_dir, filepath);
             break;
         case DMON_ACTION_MODIFY:
-            log_info("Modified [%s]%s...", root_dir, filepath);
+            log_info("Modified %s%s...", root_dir, filepath);
             break;
         case DMON_ACTION_MOVE:
-            log_info("Renamed [%s]%s to [%s]%s...", root_dir, oldfilepath, root_dir, filepath);
+            log_info("Renamed %s%s to %s%s...", root_dir, oldfilepath, root_dir, filepath);
             break;
     }
 
@@ -292,35 +292,18 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
     for (u32 i = 0; i < cmds.len; i++) {
         if (is_proc_waiting) break;
         is_proc_running = true;
-        log_info("Running '%s'...", cmds.data[i]);
         ProcRes proc = proc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
         if (ail_sv_ends_with_char(ail_sv_from_str(proc.out), '\n')) printf("%s", proc.out.str);
         else puts(proc.out.str);
         if (!proc.succ) {
             log_warn("'%s' failed", cmds.data[i]);
             break;
+        } else {
+            log_info("'%s' ran successfully", cmds.data[i]);
         }
         is_proc_running = false;
     }
 }
-
-#define collect_flag_vals(arg, argv, argc, idx, program, list) do {               \
-    i64 _eq_idx = ail_sv_index_of_char(arg, '=');                                 \
-    if (_eq_idx >= 0) {                                                           \
-        ail_sv_split_next_char(&arg, '=', true);                                  \
-        if (!arg.len) {                                                           \
-            log_err("Expected a value after the equals sign in '%s'", argv[idx]); \
-            printf("See detailed usage info by running `%s --help`\n", program);  \
-        } else {                                                                  \
-            list_push(dirs, (char*)arg.str);                                      \
-        }                                                                         \
-    } else {                                                                      \
-        for (++idx; idx < argc && argv[idx][0] != '-'; idx++) {                   \
-            list_push(dirs, argv[idx]);                                           \
-        }                                                                         \
-        idx--;                                                                    \
-    }                                                                             \
-} while(0)
 
 int main(int argc, char **argv)
 {
@@ -333,14 +316,54 @@ int main(int argc, char **argv)
     }
 
     if (argv[1][0] == '-') { // Flags are used in command line options (Usage variant 3)
-        for (i32 i = 1; i < argc; i++) {
+        for (i32 i = 1; i < argc; ) {
             AIL_SV arg = ail_sv_from_cstr(argv[i]);
+            // @Cleanup: Lots of code duplication, but couldn't figure out how to compress it nicely ¯\_(ツ)_/¯
             if (ail_sv_starts_with(arg, SV_LIT_T("-d")) || ail_sv_starts_with(arg, SV_LIT_T("--dir"))) {
-                collect_flag_vals(arg, argv, argc, i, program, dirs);
+                i64 _eq_idx = ail_sv_index_of_char(arg, '=');
+                if (_eq_idx >= 0) {
+                    ail_sv_split_next_char(&arg, '=', true);
+                    if (!arg.len) {
+                        log_err("Expected a value after the equals sign in '%s'", argv[i]);
+                        printf("See detailed usage info by running `%s --help`\n", program);
+                    } else {
+                        list_push(dirs, (char*)arg.str);
+                    }
+                } else {
+                    for (++i; i < argc && argv[i][0] != '-'; i++) {
+                        list_push(dirs, argv[i]);
+                    }
+                }
             } else if (ail_sv_starts_with(arg, SV_LIT_T("-m")) || ail_sv_starts_with(arg, SV_LIT_T("--match"))) {
-                collect_flag_vals(arg, argv, argc, i, program, regexs);
+                i64 _eq_idx = ail_sv_index_of_char(arg, '=');
+                if (_eq_idx >= 0) {
+                    ail_sv_split_next_char(&arg, '=', true);
+                    if (!arg.len) {
+                        log_err("Expected a value after the equals sign in '%s'", argv[i]);
+                        printf("See detailed usage info by running `%s --help`\n", program);
+                    } else {
+                        list_push(regexs, re_compile(arg.str));
+                    }
+                } else {
+                    for (++i; i < argc && argv[i][0] != '-'; i++) {
+                        list_push(regexs, re_compile(argv[i]));
+                    }
+                }
             } else if (ail_sv_starts_with(arg, SV_LIT_T("-c")) || ail_sv_starts_with(arg, SV_LIT_T("--cmd"))) {
-                collect_flag_vals(arg, argv, argc, i, program, cmds);
+                i64 _eq_idx = ail_sv_index_of_char(arg, '=');
+                if (_eq_idx >= 0) {
+                    ail_sv_split_next_char(&arg, '=', true);
+                    if (!arg.len) {
+                        log_err("Expected a value after the equals sign in '%s'", argv[i]);
+                        printf("See detailed usage info by running `%s --help`\n", program);
+                    } else {
+                        list_push(cmds, (char*)arg.str);
+                    }
+                } else {
+                    for (++i; i < argc && argv[i][0] != '-'; i++) {
+                        list_push(cmds, argv[i]);
+                    }
+                }
             } else if (ail_sv_starts_with(arg, SV_LIT_T("-v")) || ail_sv_starts_with(arg, SV_LIT_T("--version"))) {
                 print_version(program);
                 return 0;
@@ -374,6 +397,8 @@ int main(int argc, char **argv)
             list_push(cmds, argv[2]);
         } else { // Usage variant 2
             list_push(dirs,   argv[1]);
+            re_t pattern = re_compile(argv[2]);
+            AIL_UNUSED(pattern);
             list_push(regexs, re_compile(argv[2]));
             for (i32 i = 3; i < argc; i++) {
                 list_push(cmds, argv[i]);
@@ -387,8 +412,26 @@ int main(int argc, char **argv)
         for (u32 j = 0; j < parts.len; j++) {
             ail_da_push(&cmds.cmds[i], ail_sv_copy_to_cstr(parts.data[j]));
         }
-        // ail_da_push(&cmds.cmds[i], NULL);
     }
+
+#if 0
+    printf("Dirs:\n");
+    for (u32 i = 0; i < dirs.len; i++) {
+        printf("  > %s\n", dirs.data[i]);
+    }
+    printf("Regexs:\n");
+    for (u32 i = 0; i < regexs.len; i++) {
+        char buf[1024];
+        int n = re_to_str(regexs.data[i], buf, 1024);
+        AIL_SV sv   = ail_sv_from_parts(buf, n);
+        AIL_Str str = ail_sv_replace(sv, SV_LIT_T("\n"), SV_LIT_T("\n    "));
+        printf("  > %s\n", str.str);
+    }
+    printf("Cmds:\n");
+    for (u32 i = 0; i < cmds.len; i++) {
+        printf("  > %s\n", cmds.data[i]);
+    }
+#endif
 
     dmon_init();
     log_info("Watching for file changes...");
