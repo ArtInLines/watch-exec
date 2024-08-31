@@ -4,12 +4,13 @@
 #include "deps/dmon/dmon.h"
 #define RE_DOT_MATCHES_NEWLINE 0
 #include "deps/tiny-regex-c/re.h"
+#include "deps/tiny-regex-c/re.c"
 #define AIL_ALL_IMPL
 #include "deps/ail/ail.h"
 #define AIL_SV_IMPL
 #include "deps/ail/ail_sv.h"
 
-#define VERSION "1.0"
+#define VERSION "1.1"
 
 // @TODO: Features to add:
 // - ignore folders
@@ -103,26 +104,26 @@ internal void print_help(char *program)
     printf("Usage variants:\n");
     printf("  1. %s <dir> <cmd>\n", program);
     printf("  2. %s <dir> <match> <cmd> [<cmd>]*\n", program);
-    printf("  3. %s [flag]+\n", program);
+    printf("  3. %s [<flag>]+\n", program);
     printf("\n");
     printf("Usage options 3 allows providing several directories/match-strings/commands\n");
     printf("\n");
     printf("To match specific files, the following regex syntax is used:\n");
-    printf("  - '.'        matches any character\n");
-    printf("  - '^'        matches beginning of string\n");
-    printf("  - '$'        matches end of string\n");
-    printf("  - '*'        match zero or more (greedy)\n");
-    printf("  - '+'        match one or more (greedy)\n");
-    printf("  - '?'        match zero or one (non-greedy)\n");
-    printf("  - '[abc]'    match if one of {'a', 'b', 'c'}\n");
-    printf("  - '[^abc]'   match if NOT one of {'a', 'b', 'c'}\n");
-    printf("  - '[a-zA-Z]' match the character set of the ranges { a-z | A-Z }\n");
-    printf("  - '\\s'      Whitespace, \t \f \r \n \v and spaces\n");
-    printf("  - '\\S'      Non-whitespace\n");
-    printf("  - '\\w'      Alphanumeric, [a-zA-Z0-9_]\n");
-    printf("  - '\\W'      Non-alphanumeric\n");
-    printf("  - '\\d'      Digits, [0-9]\n");
-    printf("  - '\\D'      Non-digits\n");
+    printf("  - '.':        matches any character\n");
+    printf("  - '^':        matches beginning of string\n");
+    printf("  - '$':        matches end of string\n");
+    printf("  - '*':        match zero or more (greedy)\n");
+    printf("  - '+':        match one or more (greedy)\n");
+    printf("  - '?':        match zero or one (non-greedy)\n");
+    printf("  - '[abc]':    match if one of {'a', 'b', 'c'}\n");
+    printf("  - '[^abc]':   match if NOT one of {'a', 'b', 'c'}\n");
+    printf("  - '[a-zA-Z]': match the character set of the ranges { a-z | A-Z }\n");
+    printf("  - '\\s':       Whitespace, \\t \\f \\r \\n \\v and spaces\n");
+    printf("  - '\\S':       Non-whitespace\n");
+    printf("  - '\\w':       Alphanumeric, [a-zA-Z0-9_]\n");
+    printf("  - '\\W':       Non-alphanumeric\n");
+    printf("  - '\\d':       Digits, [0-9]\n");
+    printf("  - '\\D':       Non-digits\n");
     printf("\n");
     printf("When using option 3, the following syntax variants are available for specifying options:\n");
     printf("  1. <flag>=<value>\n");
@@ -132,11 +133,11 @@ internal void print_help(char *program)
     printf("All commands are executed in the order that they are provided in when the specified files are changed\n");
     printf("\n");
     printf("Option flags:\n");
-    printf("  -d|--dir      Directory to match files inside of\n");
-    printf("  -m|--match    \n");
-    printf("  -c|--cmd      \n");
-    printf("  -h|--help     Show this help message\n");
-    printf("  -v|--version  Show the program's version\n");
+    printf("  -d|--dir:     Directory to match files inside of\n");
+    printf("  -m|--match:   Regular Expression to match file-names against\n");
+    printf("  -c|--cmd:     Command to execute when a matching file was changed\n");
+    printf("  -h|--help:    Show this help message\n");
+    printf("  -v|--version: Show the program's version\n");
 }
 
 internal void print_version(char *program)
