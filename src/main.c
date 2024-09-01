@@ -56,7 +56,7 @@ internal void print_version(char *program)
     printf("Copyright (C) 2024 Lily Val Richter\n");
 }
 
-internal b32 re_matches(re_t regex, const char *str)
+internal b32 re_matches(re_t* regex, const char *str)
 {
     int len;
     int idx = re_matchp(regex, str, &len);
@@ -196,7 +196,7 @@ int main(int argc, char **argv)
             list_push(cmds, argv[2]);
         } else { // Usage variant 2
             list_push(dirs,   argv[1]);
-            re_t pattern = re_compile(argv[2]);
+            re_t *pattern = re_compile(argv[2]);
             AIL_UNUSED(pattern);
             list_push(regexs, re_compile(argv[2]));
             for (i32 i = 3; i < argc; i++) {

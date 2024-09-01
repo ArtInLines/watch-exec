@@ -1,3 +1,0 @@
-Modificatons made to original tiny-regex-c:
-- The enumerated values "UNUSED, DOT, BEGIN, END, QUESTIONMARK, STAR, PLUS, CHAR, CHAR_CLASS, INV_CHAR_CLASS, DIGIT, NOT_DIGIT, ALPHA, NOT_ALPHA, WHITESPACE, NOT_WHITESPACE" were renamed to "RE_UNUSED, RE_DOT, RE_BEGIN, RE_END, RE_QUESTIONMARK, RE_STAR, RE_PLUS, RE_CHAR, RE_CHAR_CLASS, RE_INV_CHAR_CLASS, RE_DIGIT, RE_NOT_DIGIT, RE_ALPHA, RE_NOT_ALPHA, RE_WHITESPACE, RE_NOT_WHITESPACE" respectively to prevent name collissions.
-- Convert re_print to re_to_str and add it to re.h

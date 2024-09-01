@@ -1,4 +1,0 @@
-*.swp
-*.pyc
-/tests/*
-!/tests/*.c
