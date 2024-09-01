@@ -92,9 +92,6 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
 
     for (u32 i = 0; i < cmds.len; i++) {
         SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
-        if (ail_sv_ends_with_char(ail_sv_from_str(proc.out), '\n')) {
-            if (proc.out.len > 1) printf("%s", proc.out.str);
-        } else puts(proc.out.str);
         if (!proc.finished) {
             log_err("'%s' couldn't be executed properly", cmds.data[i]);
         }
@@ -122,7 +119,7 @@ int main(int argc, char **argv)
             AIL_SV arg = ail_sv_from_cstr(argv[i]);
             // @Cleanup: Lots of code duplication, but couldn't figure out how to compress it nicely ¯\_(ツ)_/¯
             if (ail_sv_starts_with(arg, SV_LIT_T("-d")) || ail_sv_starts_with(arg, SV_LIT_T("--dir"))) {
-                i64 _eq_idx = ail_sv_index_of_char(arg, '=');
+                i64 _eq_idx = ail_sv_find_char(arg, '=');
                 if (_eq_idx >= 0) {
                     ail_sv_split_next_char(&arg, '=', true);
                     if (!arg.len) {
@@ -137,7 +134,7 @@ int main(int argc, char **argv)
                     }
                 }
             } else if (ail_sv_starts_with(arg, SV_LIT_T("-m")) || ail_sv_starts_with(arg, SV_LIT_T("--match"))) {
-                i64 _eq_idx = ail_sv_index_of_char(arg, '=');
+                i64 _eq_idx = ail_sv_find_char(arg, '=');
                 if (_eq_idx >= 0) {
                     ail_sv_split_next_char(&arg, '=', true);
                     if (!arg.len) {
@@ -152,7 +149,7 @@ int main(int argc, char **argv)
                     }
                 }
             } else if (ail_sv_starts_with(arg, SV_LIT_T("-c")) || ail_sv_starts_with(arg, SV_LIT_T("--cmd"))) {
-                i64 _eq_idx = ail_sv_index_of_char(arg, '=');
+                i64 _eq_idx = ail_sv_find_char(arg, '=');
                 if (_eq_idx >= 0) {
                     ail_sv_split_next_char(&arg, '=', true);
                     if (!arg.len) {
@@ -235,6 +232,7 @@ int main(int argc, char **argv)
     }
 #endif
 
+    subproc_init();
     dmon_init();
     log_info("Watching for file changes...");
     log_info("Quit with 'q'...");
@@ -243,6 +241,7 @@ int main(int argc, char **argv)
     }
     while ((getc(stdin) | 0x20) != 'q') {}
     dmon_deinit();
+    subproc_deinit();
 
     return 0;
 }

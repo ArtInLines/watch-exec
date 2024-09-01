@@ -8,6 +8,7 @@
 // - allow specifying seperate commands for seperate dirs/matches
 // - provide non-recursive option
 // - run subprocess in seperate thread so they can be killed at any time to start again
+// - work with unicode instead of ascii
 
 #include <stdio.h>
 #define DMON_IMPL
