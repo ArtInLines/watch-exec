@@ -1,98 +1,8 @@
-#include <stdio.h>
-
-#define DMON_IMPL
-#include "deps/dmon/dmon.h"
-#define RE_DOT_MATCHES_NEWLINE 0
-#include "deps/tiny-regex-c/re.h"
-#include "deps/tiny-regex-c/re.c"
-#define AIL_ALL_IMPL
-#include "deps/ail/ail.h"
-#define AIL_SV_IMPL
-#include "deps/ail/ail_sv.h"
-
-#define VERSION "1.1"
-
-// @TODO: Features to add:
-// - ignore folders
-// - allow specifying seperate commands for seperate dirs/matches
-// - provide non-recursive option
-
-#define SV_LIT AIL_SV_FROM_LITERAL
-#define SV_LIT_T AIL_SV_FROM_LITERAL_T
-
-#define PROC_PIPE_SIZE 2048
-
-#define BUFFER_LEN 32
-typedef struct StrList {
-    u32 len;
-    char* data[BUFFER_LEN];
-} StrList;
-typedef struct RegexList {
-    u32 len;
-    re_t data[BUFFER_LEN];
-} RegexList;
-typedef struct CmdList {
-    u32 len;
-    str data[BUFFER_LEN];
-    AIL_DA(str) cmds[BUFFER_LEN];
-} CmdList;
-#define list_push(list, el) ((list).data[(list).len++] = (el))
-
-#ifdef _WIN32
-#   include <windows.h>
-#   include <direct.h>
-#   include <shellapi.h>
-    typedef HANDLE ProcOSPipe;
-#else
-#   include <sys/types.h>
-#   include <sys/wait.h>
-#   include <sys/stat.h>
-#   include <unistd.h>
-    typedef int ProcOSPipe;
-#endif // _WIN32
-typedef struct {
-    AIL_Str out;
-    b32 succ;
-} ProcRes;
-
+#include "header.h"
 
 global StrList   dirs;
 global RegexList regexs;
 global CmdList   cmds;
-
-global b32 is_proc_running;
-global b32 is_proc_waiting;
-
-
-AIL_PRINTF_FORMAT(1, 2)
-void log_err(char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    fputs("\x1b[31m[ERROR:] ", stdout);
-    vprintf(format, args);
-    fputs("\x1b[0m\n", stdout);
-    va_end(args);
-}
-
-AIL_PRINTF_FORMAT(1, 2)
-void log_warn(char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    fputs("\x1b[33m[WARN:] ", stdout);
-    vprintf(format, args);
-    fputs("\x1b[0m\n", stdout);
-    va_end(args);
-}
-
-AIL_PRINTF_FORMAT(1, 2)
-void log_info(char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    fputs("[INFO:] ", stdout);
-    vprintf(format, args);
-    fputs("\n", stdout);
-    va_end(args);
-}
 
 internal void print_help(char *program)
 {
@@ -146,113 +56,7 @@ internal void print_version(char *program)
     printf("Copyright (C) 2024 Lily Val Richter\n");
 }
 
-ProcRes proc_exec(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
-{
-    ProcRes res = {
-        .out  = AIL_STR_FROM_LITERAL(""),
-        .succ = false,
-    };
-    if (!argv->len) {
-        log_err("Cannot run empty command");
-        return res;
-    }
-    log_info("Running '%s'...", arg_str);
-#ifdef _WIN32
-    ProcOSPipe pipe_read, pipe_write;
-    SECURITY_ATTRIBUTES saAttr = {0};
-    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
-    saAttr.bInheritHandle = TRUE;
-    if (!CreatePipe(&pipe_read, &pipe_write, &saAttr, 0)) {
-        log_err("Could not establish pipe to child process");
-        return res;
-    }
-
-    STARTUPINFO siStartInfo;
-    ZeroMemory(&siStartInfo, sizeof(siStartInfo));
-    siStartInfo.cb = sizeof(STARTUPINFO);
-
-    siStartInfo.hStdError  = GetStdHandle(STD_ERROR_HANDLE);
-    siStartInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (siStartInfo.hStdOutput == INVALID_HANDLE_VALUE || siStartInfo.hStdError == INVALID_HANDLE_VALUE) {
-        log_err("Could not get the handles to child process stdout/stderr");
-        return res;
-    }
-    siStartInfo.hStdOutput = pipe_write;
-    siStartInfo.hStdError  = pipe_write;
-    siStartInfo.dwFlags   |= STARTF_USESTDHANDLES;
-    PROCESS_INFORMATION piProcInfo;
-    ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
-
-    if (!CreateProcessA(NULL, arg_str, NULL, NULL, TRUE, 0, NULL, NULL, &siStartInfo, &piProcInfo)) {
-        log_err("Could not create child process");
-        CloseHandle(pipe_write);
-        CloseHandle(pipe_read);
-        return res;
-    }
-
-    if (WaitForSingleObject(piProcInfo.hProcess, INFINITE) == WAIT_FAILED) {
-        log_err("Failed to wait for child process to exit");
-        CloseHandle(pipe_write);
-        CloseHandle(pipe_read);
-        CloseHandle(piProcInfo.hProcess);
-        return res;
-    }
-
-    char *buf = AIL_CALL_ALLOC(allocator, PROC_PIPE_SIZE);
-    if (!buf) {
-        log_err("Could not allocate enough memory to read child process' output");
-        return res;
-    }
-    DWORD nBytesRead;
-    ReadFile(pipe_read, buf, PROC_PIPE_SIZE, &nBytesRead, 0);
-    buf[nBytesRead] = 0;
-    res.out = ail_str_from_parts(buf, nBytesRead);
-#else
-    ProcOSPipe pipefd[2];
-    if (pipe(pipefd) != -1) {
-        log_err("Could not establish pipe to child process");
-        return res;
-    }
-
-    AIL_DA(char) da = ail_da_new_with_alloc(char, PROC_PIPE_SIZE, allocator);
-    char buf[PROC_PIPE_SIZE] = {0};
-    pid_t cpid = fork();
-    if (cpid < 0) {
-        log_err("Could not create child process");
-        return res;
-    } else if (cpid == 0) { // Run by child
-        ail_da_push(argv, NULL);
-        close(pipefd[0]);
-        execvp(argv->data[0], (char* const*) argv->data);
-        while (read(stdout, buf, PROC_PIPE_SIZE) != EOF) {
-            u64 len = strlen(buf);
-            ail_da_pushn(&da, buf, len);
-            memset(buf, 0, len);
-        }
-        write(pipefd[1], da.data, da.len);
-        close(pipefd[1]); // Required for reader to see EOF
-    } else { // Run by parent
-        close(pipefd[1]);
-        while (read(pipefd[0], buf, PROC_PIPE_SIZE) != EOF) {
-            u64 len = strlen(buf);
-            ail_da_pushn(&da, buf, len);
-            memset(buf, 0, len);
-        }
-        int wstatus = 0;
-        if (waitpid(cpid, &wstatus, 0) < 0) {
-            log_err("Failed to wait for child process to exit");
-            return res;
-        }
-        ail_da_push(&da, 0);
-        res.out = ail_sv_from_da(da);
-    }
-#endif
-    AIL_CALL_FREE(argv->allocator, arg_str);
-    res.succ = true;
-    return res;
-}
-
-b32 re_matches(re_t regex, const char *str)
+internal b32 re_matches(re_t regex, const char *str)
 {
     int len;
     int idx = re_matchp(regex, str, &len);
@@ -286,22 +90,20 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
             break;
     }
 
-    is_proc_waiting = true;
-    while (is_proc_running) {}; // busy looping isn't very cool but eh ¯\_(ツ)_/¯
-    is_proc_waiting = false;
     for (u32 i = 0; i < cmds.len; i++) {
-        if (is_proc_waiting) break;
-        is_proc_running = true;
-        ProcRes proc = proc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
-        if (ail_sv_ends_with_char(ail_sv_from_str(proc.out), '\n')) printf("%s", proc.out.str);
-        else puts(proc.out.str);
-        if (!proc.succ) {
-            log_warn("'%s' failed", cmds.data[i]);
+        SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
+        if (ail_sv_ends_with_char(ail_sv_from_str(proc.out), '\n')) {
+            if (proc.out.len > 1) printf("%s", proc.out.str);
+        } else puts(proc.out.str);
+        if (!proc.finished) {
+            log_err("'%s' couldn't be executed properly", cmds.data[i]);
+        }
+        else if (proc.exitCode) {
+            log_warn("'%s' failed with exit Code %d", cmds.data[i], proc.exitCode);
             break;
         } else {
-            log_info("'%s' ran successfully", cmds.data[i]);
+            log_succ("'%s' ran successfully", cmds.data[i]);
         }
-        is_proc_running = false;
     }
 }
 

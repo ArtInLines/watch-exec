@@ -11,7 +11,7 @@ Use any C-compiler to compile [watch-exec.c](./watch-exec.c) and you're done.
 For example, with clang:
 
 ```
-clang -o watch-exec.exe watch-exec.c
+clang -o watch-exec.exe src/main.c
 ```
 
 ## Usage
