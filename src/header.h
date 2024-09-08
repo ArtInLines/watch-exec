@@ -23,8 +23,7 @@
 #define SV_LIT_T AIL_SV_FROM_LITERAL_T
 
 #include "log.c"
-#define RE_DOT_MATCHES_NEWLINE 0
-#include "re.c"
+#include "pm.c"
 #include "subproc.c"
 
 #define BUFFER_LEN 32
@@ -34,7 +33,7 @@ typedef struct StrList {
 } StrList;
 typedef struct RegexList {
     u32 len;
-    re_t* data[BUFFER_LEN];
+    PM_Pattern data[BUFFER_LEN];
 } RegexList;
 typedef struct CmdList {
     u32 len;
