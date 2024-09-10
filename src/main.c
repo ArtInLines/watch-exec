@@ -63,26 +63,26 @@ internal void print_version(char *program)
     printf("Copyright (C) 2024 Lily Val Richter\n");
 }
 
-internal void log_pm_comp_err(PM_Exp_Type exp_type, PM_Err err, const char *str_to_compile)
+internal void log_ail_pm_comp_err(AIL_PM_Exp_Type exp_type, AIL_PM_Err err, const char *str_to_compile)
 {
     b32 show_idx = false;
     char *desc = "";
     switch (err.type) {
-        case PM_ERR_UNKNOWN_EXP_TYPE:        AIL_UNREACHABLE(); break;
-        case PM_ERR_LATE_START_MARKER:       desc = "Start Marker must be placed at the beginning or be escaped if you mean the character literal"; break;
-        case PM_ERR_EARLY_END_MARKER:        desc = "End Marker must be placed at the end or be escaped if you mean the character literal"; break;
-        case PM_ERR_INCOMPLETE_ESCAPE:       desc = "Incomplete Escape Sequence: If you mean the character literal, escape the escape character"; break;
-        case PM_ERR_INVALID_COUNT_QUALIFIER: desc = "Unescaped Count Qualifier must appear after a valid element"; break;
-        case PM_ERR_MISSING_BRACKET:         desc = "A bracket is missing to complete the character grouping"; break;
-        case PM_ERR_INVALID_BRACKET:         desc = "Literal Closing Brackets must be escaped"; break;
-        case PM_ERR_INVALID_RANGE:           desc = "Ranges must have a lower character on the left of the dash"; break;
-        case PM_ERR_INVALID_RANGE_SYNTAX:    desc = "Invalid syntax for character range"; break;
-        case PM_ERR_EMPTY_GROUP:             desc = "Empty character groups are not allowed"; break;
-        case PM_ERR_INCOMPLETE_RANGE:        desc = "Incompletes character ranges are not allowed"; break;
-        case PM_ERR_INVALID_SPECIAL_CHAR:    desc = "Special Characters are not allowed here - escape the character if you mean the character literal"; break;
-        case PM_ERR_COUNT:                   AIL_UNREACHABLE(); break;
+        case AIL_PM_ERR_UNKNOWN_EXP_TYPE:        AIL_UNREACHABLE(); break;
+        case AIL_PM_ERR_LATE_START_MARKER:       desc = "Start Marker must be placed at the beginning or be escaped if you mean the character literal"; break;
+        case AIL_PM_ERR_EARLY_END_MARKER:        desc = "End Marker must be placed at the end or be escaped if you mean the character literal"; break;
+        case AIL_PM_ERR_INCOMPLETE_ESCAPE:       desc = "Incomplete Escape Sequence: If you mean the character literal, escape the escape character"; break;
+        case AIL_PM_ERR_INVALID_COUNT_QUALIFIER: desc = "Unescaped Count Qualifier must appear after a valid element"; break;
+        case AIL_PM_ERR_MISSING_BRACKET:         desc = "A bracket is missing to complete the character grouping"; break;
+        case AIL_PM_ERR_INVALID_BRACKET:         desc = "Literal Closing Brackets must be escaped"; break;
+        case AIL_PM_ERR_INVALID_RANGE:           desc = "Ranges must have a lower character on the left of the dash"; break;
+        case AIL_PM_ERR_INVALID_RANGE_SYNTAX:    desc = "Invalid syntax for character range"; break;
+        case AIL_PM_ERR_EMPTY_GROUP:             desc = "Empty character groups are not allowed"; break;
+        case AIL_PM_ERR_INCOMPLETE_RANGE:        desc = "Incompletes character ranges are not allowed"; break;
+        case AIL_PM_ERR_INVALID_SPECIAL_CHAR:    desc = "Special Characters are not allowed here - escape the character if you mean the character literal"; break;
+        case AIL_PM_ERR_COUNT:                   AIL_UNREACHABLE(); break;
     }
-    log_err("Failed to parse the following '%s' pattern: %s:", pm_exp_to_str(exp_type), desc);
+    log_err("Failed to parse the following '%s' pattern: %s:", ail_pm_exp_to_str(exp_type), desc);
     log_err("  '%s'", str_to_compile);
     if (show_idx) log_err("   %*c", err.idx, '^');
 }
@@ -95,8 +95,8 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
     AIL_SV fpath_sv = ail_sv_from_cstr(filepath);
     b32 matched = 0;
     for (u32 i = 0; !matched && i < regexs.len; i++) {
-        matched = pm_matches_sv(regexs.data[i], fpath_sv);
-        if (oldfilepath) matched |= pm_matches_sv(regexs.data[i], fpath_sv);
+        matched = ail_pm_matches_sv(regexs.data[i], fpath_sv);
+        if (oldfilepath) matched |= ail_pm_matches_sv(regexs.data[i], fpath_sv);
     }
     if (!matched) return;
 
@@ -166,18 +166,18 @@ int main(int argc, char **argv)
                         log_err("Expected a value after the equals sign in '%s'", argv[i]);
                         printf("See detailed usage info by running `%s --help`\n", program);
                     } else {
-                        PM_Comp_Res comp_res = pm_compile_sv(arg, PM_EXP_GLOB, ail_default_allocator);
+                        AIL_PM_Comp_Res comp_res = ail_pm_compile_sv_a(arg, AIL_PM_EXP_GLOB, ail_default_allocator);
                         if (comp_res.failed) {
-                            log_pm_comp_err(PM_EXP_GLOB, comp_res.err, arg.str);
+                            log_ail_pm_comp_err(AIL_PM_EXP_GLOB, comp_res.err, arg.str);
                             return 1;
                         } else list_push(regexs, comp_res.pattern);
                     }
                 } else {
                     for (++i; i < argc && argv[i][0] != '-'; i++) {
                         AIL_SV a = ail_sv_from_cstr(argv[i]);
-                        PM_Comp_Res comp_res = pm_compile_sv(a, PM_EXP_GLOB, ail_default_allocator);
+                        AIL_PM_Comp_Res comp_res = ail_pm_compile_sv_a(a, AIL_PM_EXP_GLOB, ail_default_allocator);
                         if (comp_res.failed) {
-                            log_pm_comp_err(PM_EXP_GLOB, comp_res.err, a.str);
+                            log_ail_pm_comp_err(AIL_PM_EXP_GLOB, comp_res.err, a.str);
                             return 1;
                         } else list_push(regexs, comp_res.pattern);
                     }
@@ -190,18 +190,18 @@ int main(int argc, char **argv)
                         log_err("Expected a value after the equals sign in '%s'", argv[i]);
                         printf("See detailed usage info by running `%s --help`\n", program);
                     } else {
-                        PM_Comp_Res comp_res = pm_compile_sv(arg, PM_EXP_REGEX, ail_default_allocator);
+                        AIL_PM_Comp_Res comp_res = ail_pm_compile_sv_a(arg, AIL_PM_EXP_REGEX, ail_default_allocator);
                         if (comp_res.failed) {
-                            log_pm_comp_err(PM_EXP_REGEX, comp_res.err, arg.str);
+                            log_ail_pm_comp_err(AIL_PM_EXP_REGEX, comp_res.err, arg.str);
                             return 1;
                         } else list_push(regexs, comp_res.pattern);
                     }
                 } else {
                     for (++i; i < argc && argv[i][0] != '-'; i++) {
                         AIL_SV a = ail_sv_from_cstr(argv[i]);
-                        PM_Comp_Res comp_res = pm_compile_sv(a, PM_EXP_REGEX, ail_default_allocator);
+                        AIL_PM_Comp_Res comp_res = ail_pm_compile_sv_a(a, AIL_PM_EXP_REGEX, ail_default_allocator);
                         if (comp_res.failed) {
-                            log_pm_comp_err(PM_EXP_REGEX, comp_res.err, a.str);
+                            log_ail_pm_comp_err(AIL_PM_EXP_REGEX, comp_res.err, a.str);
                             return 1;
                         } else list_push(regexs, comp_res.pattern);
                     }
@@ -254,10 +254,10 @@ int main(int argc, char **argv)
             list_push(cmds, argv[2]);
         } else { // Usage variant 2
             list_push(dirs, argv[1]);
-            AIL_SV arg = ail_sv_from_cstr(argv[2]);    
-            PM_Comp_Res comp_res = pm_compile_sv(arg, PM_EXP_GLOB, ail_default_allocator);
+            AIL_SV arg = ail_sv_from_cstr(argv[2]);
+            AIL_PM_Comp_Res comp_res = ail_pm_compile_sv_a(arg, AIL_PM_EXP_GLOB, ail_default_allocator);
             if (comp_res.failed) {
-                log_pm_comp_err(PM_EXP_GLOB, comp_res.err, arg.str);
+                log_ail_pm_comp_err(AIL_PM_EXP_GLOB, comp_res.err, arg.str);
                 return 1;
             } else list_push(regexs, comp_res.pattern);
             for (i32 i = 3; i < argc; i++) list_push(cmds, argv[i]);
@@ -268,7 +268,7 @@ int main(int argc, char **argv)
         AIL_DA(AIL_SV) parts = ail_sv_split_whitespace(ail_sv_from_cstr(cmds.data[i]), true);
         cmds.cmds[i] = ail_da_new_t(str);
         for (u32 j = 0; j < parts.len; j++) {
-            ail_da_push(&cmds.cmds[i], ail_sv_copy_to_cstr(parts.data[j]));
+            ail_da_push(&cmds.cmds[i], ail_sv_to_cstr(parts.data[j]));
         }
     }
 
