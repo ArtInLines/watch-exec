@@ -137,7 +137,7 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
     HANDLE pipe_in_read = 0, pipe_in_write = 0;
     HANDLE pipe_out_read = 0, pipe_out_write = 0;
     HPCON hpc = NULL;
-    char *buf = NULL;
+    AIL_DA(char) buf = ail_da_new_with_alloc(char, SUBPROC_PIPE_SIZE, allocator);
     SECURITY_ATTRIBUTES saAttr = {0};
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = TRUE;
@@ -215,20 +215,24 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
     }
     res.exitCode = nExitCode;
 
-    buf = AIL_CALL_ALLOC(allocator, SUBPROC_PIPE_SIZE);
-    if (!buf) {
-        log_err("Could not allocate enough memory to read child process' output");
-        goto done;
-    }
     DWORD nBytesRead, nBytesWritten;
     // @Note: We need to write at least one byte into the pipe, or else the ReadFile will block forever, waiting for something to read.
     WriteFile(pipe_out_write, "\n", 1, &nBytesWritten, NULL);
-    if (!ReadFile(pipe_out_read, buf, SUBPROC_PIPE_SIZE, &nBytesRead, 0)) {
-        log_err("Failed to read stdout from child process");
-        goto done;
+    for (;;) {
+        u32 n = buf.cap - buf.len;
+        AIL_ASSERT(n >= SUBPROC_PIPE_SIZE);
+        if (!ReadFile(pipe_out_read, &buf.data[buf.len], n, &nBytesRead, 0)) {
+            log_err("Failed to read stdout from child process");
+            goto done;
+        }
+        buf.len += nBytesRead;
+        if (nBytesRead < n) break;
+        ail_da_resize(&buf, buf.len + SUBPROC_PIPE_SIZE);
     }
+    ail_da_push(&buf, 0);
+    buf.len--;
     res.finished = true;
-    subproc_print_output(ail_str_from_parts(buf, nBytesRead));
+    subproc_print_output(ail_str_from_da_nil_term(buf));
 
 done:
     if (pipe_in_read)        CloseHandle(pipe_in_read);
@@ -237,7 +241,7 @@ done:
     if (pipe_out_write)      CloseHandle(pipe_out_write);
     if (piProcInfo.hProcess) CloseHandle(piProcInfo.hProcess);
     if (hpc)                 ClosePseudoConsole(hpc);
-    if (buf)                 AIL_CALL_FREE(allocator, buf);
+    if (buf.data)            ail_da_free(&buf);
     if (si.lpAttributeList)  AIL_CALL_FREE(allocator, si.lpAttributeList);
     return res;
 }

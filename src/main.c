@@ -280,7 +280,7 @@ int main(int argc, char **argv)
     printf("Regexs:\n");
     for (u32 i = 0; i < regexs.len; i++) {
         char buf[1024];
-        int n = re_to_str(regexs.data[i], buf, 1024);
+        int n = ail_pm_pattern_to_str(regexs.data[i], buf, sizeof(buf));
         AIL_SV sv   = ail_sv_from_parts(buf, n);
         AIL_Str str = ail_sv_replace(sv, SV_LIT_T("\n"), SV_LIT_T("\n    "));
         printf("  > %s\n", str.str);
