@@ -9,12 +9,15 @@
 #   include <direct.h>
 #   include <shellapi.h>
     typedef struct { DWORD in_mode, out_mode, err_mode; } SubProcConsoleState;
+    typedef HANDLE SubProcStdHandle;
 #else
 #   include <sys/types.h>
 #   include <sys/wait.h>
 #   include <sys/stat.h>
+#   include <termios.h>
 #   include <unistd.h>
     typedef struct termios SubProcConsoleState;
+    typedef int SubProcStdHandle;
 #endif // _WIN32
 
 typedef struct {
@@ -31,9 +34,9 @@ internal void subproc_init(void);
 
 
 global SubProcConsoleState subproc_initial_console_state;
-global void* subproc_stdin;
-global void* subproc_stdout;
-global void* subproc_stderr;
+global SubProcStdHandle subproc_stdin;
+global SubProcStdHandle subproc_stdout;
+global SubProcStdHandle subproc_stderr;
 
 
 internal SubProcRes subproc_exec(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
@@ -255,28 +258,40 @@ done:
 global struct termios subproc_old_out_mode;
 
 
-internal void subproc_init(void)
+SubProcConsoleState subproc_get_console_state(void)
 {
-    subproc_stdin  = AIL_TODO();
-    subproc_stdout = AIL_TODO();
-    subproc_stderr = AIL_TODO();
-    tcgetattr(subproc_stdin, &subproc_old_attr);
-    struct termios attr = subproc_old_attr;
-    attr.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(subproc_stdin, TCSANOW, &attr);
+    SubProcConsoleState attr;
+    tcgetattr(subproc_stdin, &attr);
+    return attr;
+}
+
+void subproc_set_console_state(SubProcConsoleState state)
+{
+    tcsetattr(subproc_stdin,  TCSANOW, &state);
+    tcsetattr(subproc_stdout, TCSANOW, &state);
+    tcsetattr(subproc_stderr, TCSANOW, &state);
+}
+
+void subproc_init(void)
+{
+    subproc_stdin  = STDIN_FILENO;
+    subproc_stdout = STDOUT_FILENO;
+    subproc_stderr = STDERR_FILENO;
+    subproc_initial_console_state = subproc_get_console_state();
+    SubProcConsoleState attr = subproc_initial_console_state;
+    attr.c_lflag &= ~(ICANON|ECHO);
+    attr.c_lflag |= ECHO;
+    subproc_set_console_state(attr);
 }
 
 
-internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
+SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
 {
-    SubProcRes res = {
-        .out      = AIL_STR_FROM_LITERAL(""),
-        .exitCode = 0,
-        .finished = false,
-    };
+    AIL_UNUSED(arg_str);
+    SubProcRes res = { 0 };
     int pipefd[2];
     if (pipe(pipefd) != -1) {
-        log_err("Could not establish pipe to child process");
+        log_err("Could not establish pipe to child process: %d", errno);
         goto done;
     }
 
@@ -290,7 +305,7 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
         ail_da_push(argv, NULL);
         close(pipefd[0]);
         execvp(argv->data[0], (char* const*) argv->data);
-        while (read(stdout, buf, SUBPROC_PIPE_SIZE) != EOF) {
+        while (read(STDOUT_FILENO, buf, SUBPROC_PIPE_SIZE) != EOF) {
             u64 len = strlen(buf);
             ail_da_pushn(&da, buf, len);
             memset(buf, 0, len);
@@ -311,12 +326,14 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
         }
         if (WIFEXITED(wstatus)) res.exitCode = WEXITSTATUS(wstatus);
 
-        subproc_print_output(ail_sv_from_da(da));
+        ail_da_push(&da, 0);
+        da.len--;
         res.finished = true;
+        subproc_print_output(ail_str_from_da_nil_term(da));
 
 done:
         if (pipefd[0]) close(pipefd[0]);
-        if (da.data)   ail_da_free(da);
+        if (da.data)   ail_da_free(&da);
     }
     return res;
 }
