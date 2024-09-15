@@ -39,3 +39,6 @@
 # Debugger files
 *.raddbg
 *.rdbg
+
+# IDE files
+.vscode/

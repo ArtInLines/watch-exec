@@ -55,6 +55,10 @@ internal void print_help(char *program)
     printf("  - '[abc]':    match if one of {'a', 'b', 'c'}\n");
     printf("  - '[^abc]':   match if NOT one of {'a', 'b', 'c'}\n");
     printf("  - '[a-zA-Z]': match the character set of the ranges { a-z | A-Z }\n");
+    printf("\n");
+    printf("While the program is running, you use the following commands:\n");
+    printf("- 'q': quit the program\n");
+    printf("- 'r': rerun all commands immediately\n");
 }
 
 internal void print_version(char *program)
@@ -87,11 +91,26 @@ internal void log_ail_pm_comp_err(AIL_PM_Exp_Type exp_type, AIL_PM_Err err, cons
     if (show_idx) log_err("   %*c", err.idx, '^');
 }
 
+internal void run_cmds(void)
+{
+    for (u32 i = 0; i < cmds.len; i++) {
+        SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
+        if (!proc.finished) {
+            log_err("'%s' couldn't be executed properly", cmds.data[i]);
+        }
+        else if (proc.exitCode) {
+            log_warn("'%s' failed with exit Code %d", cmds.data[i], proc.exitCode);
+            break;
+        } else {
+            log_succ("'%s' ran successfully", cmds.data[i]);
+        }
+    }
+}
+
 internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const char* root_dir, const char* filepath, const char* oldfilepath, void* user_data)
 {
     AIL_UNUSED(user_data);
     AIL_UNUSED(watch_id);
-
     AIL_SV fpath_sv = ail_sv_from_cstr(filepath);
     b32 matched = regexs.len == 0;
     for (u32 i = 0; !matched && i < regexs.len; i++) {
@@ -114,19 +133,7 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
             log_info("Renamed %s%s to %s%s...", root_dir, oldfilepath, root_dir, filepath);
             break;
     }
-
-    for (u32 i = 0; i < cmds.len; i++) {
-        SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
-        if (!proc.finished) {
-            log_err("'%s' couldn't be executed properly", cmds.data[i]);
-        }
-        else if (proc.exitCode) {
-            log_warn("'%s' failed with exit Code %d", cmds.data[i], proc.exitCode);
-            break;
-        } else {
-            log_succ("'%s' ran successfully", cmds.data[i]);
-        }
-    }
+    run_cmds();
 }
 
 int main(int argc, char **argv)
@@ -294,11 +301,15 @@ int main(int argc, char **argv)
     subproc_init();
     dmon_init();
     log_info("Watching for file changes...");
-    log_info("Quit with 'q'...");
+    log_info("Quit with 'q', rerun all commands with 'r'...");
     for (u32 i = 0; i < dirs.len; i++) {
         dmon_watch(dirs.data[i], watch_callback, DMON_WATCHFLAGS_RECURSIVE, NULL);
     }
-    while ((getc(stdin) | 0x20) != 'q') {}
+    for (;;) {
+        char c = (getc(stdin) | 0x20);
+        if (c == 'q') break;
+        if (c == 'r') run_cmds();
+    }
     dmon_deinit();
     subproc_deinit();
 

@@ -1,7 +1,7 @@
 #ifndef _HEADER_H
 #define _HEADER_H
 
-#define VERSION "1.3"
+#define VERSION "1.4"
 
 // @TODO: Features to add:
 // - ignore folders
