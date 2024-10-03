@@ -31,6 +31,16 @@ void log_info(char *format, ...) {
 }
 
 AIL_PRINTF_FORMAT(1, 2)
+void log_dbg(char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    fputs("\x1b[36m[DEBUG]: ", stdout);
+    vprintf(format, args);
+    fputs("\x1b[0m\n", stdout);
+    va_end(args);
+}
+
+AIL_PRINTF_FORMAT(1, 2)
 void log_succ(char *format, ...) {
     va_list args;
     va_start(args, format);

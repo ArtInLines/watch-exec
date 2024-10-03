@@ -12,6 +12,7 @@
 // - provide non-regex options (maybe glob? maybe flat text?)
 
 #include <stdio.h>
+#include <threads.h>
 #define DMON_IMPL
 #include "../deps/dmon/dmon.h"
 #define AIL_ALL_IMPL

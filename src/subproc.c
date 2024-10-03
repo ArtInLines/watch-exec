@@ -1,7 +1,7 @@
 #include "header.h"
 
 #ifndef SUBPROC_PIPE_SIZE
-#   define SUBPROC_PIPE_SIZE 2048
+#   define SUBPROC_PIPE_SIZE AIL_MB(16)
 #endif
 
 #if defined(_WIN32) || defined(__WIN32__)
@@ -10,14 +10,17 @@
 #   include <shellapi.h>
     typedef struct { DWORD in_mode, out_mode, err_mode; } SubProcConsoleState;
     typedef HANDLE SubProcStdHandle;
+    typedef HANDLE SubProcProcHandle;
 #else
 #   include <sys/types.h>
 #   include <sys/wait.h>
 #   include <sys/stat.h>
 #   include <termios.h>
 #   include <unistd.h>
+#   include <signal.h>
     typedef struct termios SubProcConsoleState;
     typedef int SubProcStdHandle;
+    typedef int SubProcProcHandle;
 #endif // _WIN32
 
 typedef struct {
@@ -31,16 +34,19 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
 internal SubProcConsoleState subproc_get_console_state(void);
 internal void subproc_set_console_state(SubProcConsoleState state);
 internal void subproc_init(void);
-
+internal void subproc_exit(void);
 
 global SubProcConsoleState subproc_initial_console_state;
 global SubProcStdHandle subproc_stdin;
 global SubProcStdHandle subproc_stdout;
 global SubProcStdHandle subproc_stderr;
+global SubProcProcHandle subproc_proc;
+global b32 subproc_terminated;
 
 
 internal SubProcRes subproc_exec(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
 {
+    subproc_terminated = false;
     if (!argv->len) {
         log_err("Cannot run empty command");
         return (SubProcRes){0};
@@ -125,6 +131,15 @@ internal void subproc_init(void)
     subproc_set_console_state(state);
 }
 
+internal void subproc_exit(void)
+{
+    if (subproc_proc) {
+        subproc_terminated = true;
+        TerminateProcess(subproc_proc, ERROR_PROCESS_ABORTED);
+        subproc_proc = 0;
+    }
+}
+
 // Code mostly adapted from the following documentation (with lots of experimentation until it worked properly):
 // - https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session
 // - https://learn.microsoft.com/en-us/windows/win32/ProcThread/creating-a-child-process-with-redirected-input-and-output
@@ -205,12 +220,26 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
         log_err("Could not create child process");
         goto done;
     }
+    subproc_proc = piProcInfo.hProcess;
     AIL_CALL_FREE(allocator, w_arg_str);
 
+#if 0
+#define SUBPROC_TIME_IN_MS (1000 * 5)
+    DWORD wait_res = WaitForSingleObject(piProcInfo.hProcess, SUBPROC_TIME_IN_MS);
+    if (wait_res == WAIT_FAILED) {
+        log_err("Failed to wait for child process to exit");
+        goto done;
+    } else if (wait_res == WAIT_TIMEOUT) {
+        log_warn("Command timed out");
+        TerminateProcess(piProcInfo.hProcess, 1);
+    }
+#else
     if (WaitForSingleObject(piProcInfo.hProcess, INFINITE) == WAIT_FAILED) {
         log_err("Failed to wait for child process to exit");
         goto done;
     }
+#endif
+
     DWORD nExitCode;
     if (!GetExitCodeProcess(piProcInfo.hProcess, &nExitCode)) {
         log_err("Failed to retrieve exit code of child process");
@@ -218,32 +247,38 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
     }
     res.exitCode = nExitCode;
 
-    DWORD nBytesRead, nBytesWritten;
-    // @Note: We need to write at least one byte into the pipe, or else the ReadFile will block forever, waiting for something to read.
-    WriteFile(pipe_out_write, "\n", 1, &nBytesWritten, NULL);
-    for (;;) {
-        u32 n = buf.cap - buf.len;
-        AIL_ASSERT(n >= SUBPROC_PIPE_SIZE);
-        if (!ReadFile(pipe_out_read, &buf.data[buf.len], n, &nBytesRead, 0)) {
-            log_err("Failed to read stdout from child process");
-            goto done;
+    if (!subproc_terminated) {
+        DWORD nBytesRead, nBytesWritten;
+        // @Note: We need to write at least one byte into the pipe, or else the ReadFile will block forever, waiting for something to read.
+        WriteFile(pipe_out_write, "\n", 1, &nBytesWritten, NULL);
+        for (;;) {
+            u32 n = buf.cap - buf.len;
+            AIL_ASSERT(n >= SUBPROC_PIPE_SIZE);
+            if (!ReadFile(pipe_out_read, &buf.data[buf.len], n, &nBytesRead, 0)) {
+                log_err("Failed to read stdout from child process");
+                goto done;
+            }
+            buf.len += nBytesRead;
+            if (nBytesRead < n) break;
+            ail_da_resize(&buf, buf.len + SUBPROC_PIPE_SIZE);
         }
-        buf.len += nBytesRead;
-        if (nBytesRead < n) break;
-        ail_da_resize(&buf, buf.len + SUBPROC_PIPE_SIZE);
+        ail_da_push(&buf, 0);
+        buf.len--;
+        subproc_print_output(ail_str_from_da_nil_term(buf));
     }
-    ail_da_push(&buf, 0);
-    buf.len--;
     res.finished = true;
-    subproc_print_output(ail_str_from_da_nil_term(buf));
 
 done:
+    // @TODO @Memory: Leaking pseudo-consoles
+    // We should actually close pseudo consoles, but that requires creating another thread,
+    // where a final output frame of the console can be drained from
+    // otherwise ClosePseudoConsole blocks indefinitely
+    // if (hpc)                 ClosePseudoConsole(hpc);
     if (pipe_in_read)        CloseHandle(pipe_in_read);
     if (pipe_in_write)       CloseHandle(pipe_in_write);
     if (pipe_out_read)       CloseHandle(pipe_out_read);
     if (pipe_out_write)      CloseHandle(pipe_out_write);
     if (piProcInfo.hProcess) CloseHandle(piProcInfo.hProcess);
-    if (hpc)                 ClosePseudoConsole(hpc);
     if (buf.data)            ail_da_free(&buf);
     if (si.lpAttributeList)  AIL_CALL_FREE(allocator, si.lpAttributeList);
     return res;
@@ -258,21 +293,21 @@ done:
 global struct termios subproc_old_out_mode;
 
 
-SubProcConsoleState subproc_get_console_state(void)
+internal SubProcConsoleState subproc_get_console_state(void)
 {
     SubProcConsoleState attr;
     tcgetattr(subproc_stdin, &attr);
     return attr;
 }
 
-void subproc_set_console_state(SubProcConsoleState state)
+internal void subproc_set_console_state(SubProcConsoleState state)
 {
     tcsetattr(subproc_stdin,  TCSANOW, &state);
     tcsetattr(subproc_stdout, TCSANOW, &state);
     tcsetattr(subproc_stderr, TCSANOW, &state);
 }
 
-void subproc_init(void)
+internal void subproc_init(void)
 {
     subproc_stdin  = STDIN_FILENO;
     subproc_stdout = STDOUT_FILENO;
@@ -284,8 +319,16 @@ void subproc_init(void)
     subproc_set_console_state(attr);
 }
 
+internal void subproc_exit(void)
+{
+    if (subproc_proc) {
+        subproc_terminated = true;
+        kill(subproc_proc, SIGKILL);
+        subproc_proc = 0;
+    }
+}
 
-SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
+internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
 {
     AIL_UNUSED(arg_str);
     SubProcRes res = { 0 };
@@ -326,10 +369,12 @@ SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator
         }
         if (WIFEXITED(wstatus)) res.exitCode = WEXITSTATUS(wstatus);
 
-        ail_da_push(&da, 0);
-        da.len--;
+        if (!subproc_terminated) {
+            ail_da_push(&da, 0);
+            da.len--;
+            subproc_print_output(ail_str_from_da_nil_term(da));
+        }
         res.finished = true;
-        subproc_print_output(ail_str_from_da_nil_term(da));
 
 done:
         if (pipefd[0]) close(pipefd[0]);

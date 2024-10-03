@@ -3,6 +3,8 @@
 global StrList   dirs;
 global RegexList regexs;
 global CmdList   cmds;
+global thrd_t    cmd_thrd;
+global HANDLE    run_cmds_ev;
 
 internal void print_help(char *program)
 {
@@ -91,27 +93,59 @@ internal void log_ail_pm_comp_err(AIL_PM_Exp_Type exp_type, AIL_PM_Err err, cons
     if (show_idx) log_err("   %*c", err.idx, '^');
 }
 
-internal void run_cmds(void)
+internal int cmd_thrd_main(void *_arg)
 {
-    for (u32 i = 0; i < cmds.len; i++) {
-        SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
-        if (!proc.finished) {
-            log_err("'%s' couldn't be executed properly", cmds.data[i]);
-        }
-        else if (proc.exitCode) {
-            log_warn("'%s' failed with exit Code %d", cmds.data[i], proc.exitCode);
-            break;
-        } else {
-            log_succ("'%s' ran successfully", cmds.data[i]);
+    AIL_UNUSED(_arg);
+    for (;;) {
+        WaitForSingleObject(run_cmds_ev, INFINITE);
+        for (u32 i = 0; i < cmds.len; i++) {
+            SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
+            if (subproc_terminated) {
+                break;
+            }
+
+            if (!proc.finished) {
+                log_err("'%s' couldn't be executed properly", cmds.data[i]);
+            }
+            else if (proc.exitCode) {
+                log_warn("'%s' failed with exit Code %d", cmds.data[i], proc.exitCode);
+                break;
+            } else {
+                log_succ("'%s' ran successfully", cmds.data[i]);
+            }
         }
     }
+    return 0;
+}
+
+internal bool cmd_thrd_init(void)
+{
+    int res = thrd_create(&cmd_thrd, cmd_thrd_main, NULL);
+    switch (res) {
+        case thrd_success: break;
+        case thrd_nomem:
+            log_warn("Not enough memory to create cmd-thread");
+            break;
+        case thrd_error: AIL_FALLTHROUGH;
+        default:
+            log_warn("Unknown error occured when trying to create cmd-thread");
+            break;
+    }
+    run_cmds_ev = CreateEventW(NULL, false, false, NULL);
+    return res == thrd_success;
+}
+
+internal void run_cmds(void)
+{
+    subproc_exit();
+    SetEvent(run_cmds_ev);
 }
 
 internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const char* root_dir, const char* filepath, const char* oldfilepath, void* user_data)
 {
     AIL_UNUSED(user_data);
     AIL_UNUSED(watch_id);
-    AIL_SV fpath_sv = ail_sv_from_cstr(filepath);
+    AIL_SV fpath_sv = ail_sv_from_cstr((char *)filepath);
     b32 matched = regexs.len == 0;
     for (u32 i = 0; !matched && i < regexs.len; i++) {
         matched = ail_pm_matches_sv(regexs.data[i], fpath_sv);
@@ -298,6 +332,10 @@ int main(int argc, char **argv)
     }
 #endif
 
+    if (!cmd_thrd_init()) {
+        log_err("Failed to create thread for executing commands");
+        return 1;
+    }
     subproc_init();
     dmon_init();
     log_info("Watching for file changes...");
