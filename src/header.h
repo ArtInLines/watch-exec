@@ -27,6 +27,7 @@
 
 #include "log.c"
 #include "subproc.c"
+#include "thread.c"
 
 #define BUFFER_LEN 32
 typedef struct StrList {

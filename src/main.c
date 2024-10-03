@@ -3,8 +3,8 @@
 global StrList   dirs;
 global RegexList regexs;
 global CmdList   cmds;
-global thrd_t    cmd_thrd;
-global HANDLE    run_cmds_ev;
+global thread    cmd_thrd;
+global thread_ev run_cmds_ev;
 
 internal void print_help(char *program)
 {
@@ -97,7 +97,8 @@ internal int cmd_thrd_main(void *_arg)
 {
     AIL_UNUSED(_arg);
     for (;;) {
-        WaitForSingleObject(run_cmds_ev, INFINITE);
+        thread_event_wait(run_cmds_ev);
+        log_dbg("cmd_thrd_main received run-cmd event");
         for (u32 i = 0; i < cmds.len; i++) {
             SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
             if (subproc_terminated) {
@@ -131,14 +132,15 @@ internal bool cmd_thrd_init(void)
             log_warn("Unknown error occured when trying to create cmd-thread");
             break;
     }
-    run_cmds_ev = CreateEventW(NULL, false, false, NULL);
+    run_cmds_ev = thread_event_create();
     return res == thrd_success;
 }
 
 internal void run_cmds(void)
 {
+    log_dbg("run_cmds()");
     subproc_exit();
-    SetEvent(run_cmds_ev);
+    thread_event_send(run_cmds_ev);
 }
 
 internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const char* root_dir, const char* filepath, const char* oldfilepath, void* user_data)
