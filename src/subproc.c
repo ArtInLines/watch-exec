@@ -17,7 +17,7 @@
 #   include <sys/stat.h>
 #   include <termios.h>
 #   include <unistd.h>
-#   include <signal.h>
+#	include <stdio.h>
     typedef struct termios SubProcConsoleState;
     typedef int SubProcStdHandle;
     typedef int SubProcProcHandle;
@@ -332,9 +332,10 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
 {
     AIL_UNUSED(arg_str);
     SubProcRes res = { 0 };
-    int pipefd[2];
-    if (pipe(pipefd) != -1) {
-        log_err("Could not establish pipe to child process: %d", errno);
+    int pipefd[2] = {0};
+    if (pipe(pipefd) < 0) {
+    	memset(pipefd, 0, sizeof(pipefd));
+        log_err("Could not establish pipe to child process: %s", strerror(errno));
         goto done;
     }
 
@@ -359,6 +360,7 @@ internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_
         close(pipefd[1]);
         while (read(pipefd[0], buf, SUBPROC_PIPE_SIZE) != EOF) {
             u64 len = strlen(buf);
+            if (!len) break;
             ail_da_pushn(&da, buf, len);
             memset(buf, 0, len);
         }
