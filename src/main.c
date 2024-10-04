@@ -111,7 +111,7 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
 {
     AIL_UNUSED(user_data);
     AIL_UNUSED(watch_id);
-    AIL_SV fpath_sv = ail_sv_from_cstr(filepath);
+    AIL_SV fpath_sv = ail_sv_from_cstr((char*)filepath);
     b32 matched = regexs.len == 0;
     for (u32 i = 0; !matched && i < regexs.len; i++) {
         matched = ail_pm_matches_sv(regexs.data[i], fpath_sv);
