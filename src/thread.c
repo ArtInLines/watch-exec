@@ -13,8 +13,9 @@ typedef thrd_t thread;
 
 // Forward declarations of functions, that all platforms need to implement
 thread_ev thread_event_create(void);
-void thread_event_send(thread_ev event);
-void thread_event_wait(thread_ev event);
+b32 thread_event_close(thread_ev event);
+b32 thread_event_send(thread_ev event);
+b32 thread_event_wait(thread_ev event);
 
 #if defined(_WIN32) || defined(__WIN32__)
 //////////////////////////
@@ -26,14 +27,19 @@ thread_ev thread_event_create(void)
     return CreateEventW(NULL, false, false, NULL);
 }
 
-void thread_event_send(thread_ev event)
+b32 thread_event_close(thread_ev event)
 {
-    SetEvent(event);
+    return CloseHandle(event);
 }
 
-void thread_event_wait(thread_ev event)
+b32 thread_event_send(thread_ev event)
 {
-    WaitForSingleObject(event, INFINITE);
+    return SetEvent(event);
+}
+
+b32 thread_event_wait(thread_ev event)
+{
+    return WaitForSingleObject(event, INFINITE);
 }
 
 
@@ -47,16 +53,23 @@ thread_ev thread_event_create(void)
     return eventfd(0, 0);
 }
 
-void thread_event_send(thread_ev event)
+b32 thread_event_close(thread_ev event)
 {
-    u64 buf = 1;
-    write(event, &buf, sizeof(buf));
+    return close(event) == 0;
 }
 
-void thread_event_wait(thread_ev event)
+b32 thread_event_send(thread_ev event)
 {
-    struct epoll_event epoll_ev;
-    epoll_wait(event, &epoll_ev, 1, -1);
+    u64 buf = 1;
+    ssize_t written_count = write(event, &buf, sizeof(buf));
+    return written_count >= 0;
+}
+
+b32 thread_event_wait(thread_ev event)
+{
+    u64 buf;
+    ssize_t read_count = read(event, &buf, sizeof(buf));
+    return read_count >= 0;
 }
 
 

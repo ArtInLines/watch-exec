@@ -1,7 +1,7 @@
 #include "header.h"
 
 #ifndef SUBPROC_PIPE_SIZE
-#   define SUBPROC_PIPE_SIZE AIL_MB(16)
+#   define SUBPROC_PIPE_SIZE AIL_MB(2)
 #endif
 
 #if defined(_WIN32) || defined(__WIN32__)
@@ -264,13 +264,11 @@ internal void subproc_exit(void)
 }
 
 internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
-SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
 {
     AIL_UNUSED(arg_str);
     SubProcRes res = { 0 };
-    int pipefd[2] = {0};
+    int pipefd[2]  = { 0 };
     if (pipe(pipefd) < 0) {
-    	memset(pipefd, 0, sizeof(pipefd));
         log_err("Could not establish pipe to child process: %s", strerror(errno));
         goto done;
     }
@@ -313,13 +311,12 @@ SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator
             subproc_print_output(ail_str_from_da_nil_term(da));
         }
         res.finished = true;
+    }
 
 done:
-        if (pipefd[0]) close(pipefd[0]);
-        if (da.data)   ail_da_free(&da);
-    }
+    if (pipefd[0]) close(pipefd[0]);
+    if (da.data)   ail_da_free(&da);
     return res;
 }
+
 #endif
-
-

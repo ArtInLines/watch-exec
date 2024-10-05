@@ -93,15 +93,16 @@ internal void log_ail_pm_comp_err(AIL_PM_Exp_Type exp_type, AIL_PM_Err err, cons
     if (show_idx) log_err("   %*c", err.idx, '^');
 }
 
+
 internal int cmd_thrd_main(void *_arg)
 {
     AIL_UNUSED(_arg);
     for (;;) {
         thread_event_wait(run_cmds_ev);
-        log_dbg("cmd_thrd_main received run-cmd event");
         for (u32 i = 0; i < cmds.len; i++) {
             SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
             if (subproc_terminated) {
+                log_info("'%s' was terminated before completing", cmds.data[i]);
                 break;
             }
 
@@ -109,7 +110,7 @@ internal int cmd_thrd_main(void *_arg)
                 log_err("'%s' couldn't be executed properly", cmds.data[i]);
                 break;
             } else if (proc.exitCode) {
-                log_warn("'%s' failed with exit Code %d", cmds.data[i], proc.exitCode);
+                log_warn("'%s' failed with exit code %d", cmds.data[i], proc.exitCode);
                 break;
             } else {
                 log_succ("'%s' ran successfully", cmds.data[i]);
@@ -121,6 +122,7 @@ internal int cmd_thrd_main(void *_arg)
 
 internal bool cmd_thrd_init(void)
 {
+    run_cmds_ev = thread_event_create();
     int res = thrd_create(&cmd_thrd, cmd_thrd_main, NULL);
     switch (res) {
         case thrd_success: break;
@@ -132,13 +134,11 @@ internal bool cmd_thrd_init(void)
             log_warn("Unknown error occured when trying to create cmd-thread");
             break;
     }
-    run_cmds_ev = thread_event_create();
     return res == thrd_success;
 }
 
 internal void run_cmds(void)
 {
-    log_dbg("run_cmds()");
     subproc_exit();
     thread_event_send(run_cmds_ev);
 }
