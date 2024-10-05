@@ -25,6 +25,7 @@
 #define SV_LIT   AIL_SV_FROM_LITERAL
 #define SV_LIT_T AIL_SV_FROM_LITERAL_T
 
+#include "term.c"
 #include "log.c"
 #include "subproc.c"
 #include "thread.c"

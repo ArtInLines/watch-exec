@@ -107,8 +107,8 @@ internal int cmd_thrd_main(void *_arg)
 
             if (!proc.finished) {
                 log_err("'%s' couldn't be executed properly", cmds.data[i]);
-            }
-            else if (proc.exitCode) {
+                break;
+            } else if (proc.exitCode) {
                 log_warn("'%s' failed with exit Code %d", cmds.data[i], proc.exitCode);
                 break;
             } else {
@@ -147,7 +147,7 @@ internal void watch_callback(dmon_watch_id watch_id, dmon_action action, const c
 {
     AIL_UNUSED(user_data);
     AIL_UNUSED(watch_id);
-    AIL_SV fpath_sv = ail_sv_from_cstr((char *)filepath);
+    AIL_SV fpath_sv = ail_sv_from_cstr((char*)filepath);
     b32 matched = regexs.len == 0;
     for (u32 i = 0; !matched && i < regexs.len; i++) {
         matched = ail_pm_matches_sv(regexs.data[i], fpath_sv);
@@ -338,6 +338,7 @@ int main(int argc, char **argv)
         log_err("Failed to create thread for executing commands");
         return 1;
     }
+    term_init();
     subproc_init();
     dmon_init();
     log_info("Watching for file changes...");
@@ -346,12 +347,12 @@ int main(int argc, char **argv)
         dmon_watch(dirs.data[i], watch_callback, DMON_WATCHFLAGS_RECURSIVE, NULL);
     }
     for (;;) {
-        char c = (getc(stdin) | 0x20);
+        char c = (term_get_char() | 0x20);
         if (c == 'q') break;
         if (c == 'r') run_cmds();
     }
     dmon_deinit();
     subproc_deinit();
-
+    term_deinit();
     return 0;
 }
