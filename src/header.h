@@ -1,15 +1,13 @@
 #ifndef _HEADER_H
 #define _HEADER_H
 
-#define VERSION "1.4"
+#define VERSION "1.5"
 
 // @TODO: Features to add:
 // - ignore folders
 // - allow specifying seperate commands for seperate dirs/matches
 // - provide non-recursive option
-// - run subprocess in seperate thread so they can be killed at any time to start again
 // - work with unicode instead of ascii
-// - provide non-regex options (maybe glob? maybe flat text?)
 
 #include <stdio.h>
 #include <threads.h>
