@@ -97,8 +97,8 @@ internal void run_cmds(void)
         SubProcRes proc = subproc_exec(&cmds.cmds[i], cmds.data[i], ail_default_allocator);
         if (!proc.finished) {
             log_err("'%s' couldn't be executed properly", cmds.data[i]);
-        }
-        else if (proc.exitCode) {
+            break;
+        } else if (proc.exitCode) {
             log_warn("'%s' failed with exit Code %d", cmds.data[i], proc.exitCode);
             break;
         } else {
@@ -298,6 +298,7 @@ int main(int argc, char **argv)
     }
 #endif
 
+    term_init();
     subproc_init();
     dmon_init();
     log_info("Watching for file changes...");
@@ -306,12 +307,12 @@ int main(int argc, char **argv)
         dmon_watch(dirs.data[i], watch_callback, DMON_WATCHFLAGS_RECURSIVE, NULL);
     }
     for (;;) {
-        char c = (getc(stdin) | 0x20);
+        char c = (term_get_char() | 0x20);
         if (c == 'q') break;
         if (c == 'r') run_cmds();
     }
     dmon_deinit();
     subproc_deinit();
-
+    term_deinit();
     return 0;
 }

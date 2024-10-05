@@ -8,8 +8,6 @@
 #   include <windows.h>
 #   include <direct.h>
 #   include <shellapi.h>
-    typedef struct { DWORD in_mode, out_mode, err_mode; } SubProcConsoleState;
-    typedef HANDLE SubProcStdHandle;
 #else
 #   include <sys/types.h>
 #   include <sys/wait.h>
@@ -17,11 +15,9 @@
 #   include <termios.h>
 #   include <unistd.h>
 #	include <stdio.h>
-    typedef struct termios SubProcConsoleState;
-    typedef int SubProcStdHandle;
 #endif // _WIN32
 
-typedef struct {
+typedef struct SubProcRes {
     i32 exitCode;
     b32 finished;
 } SubProcRes;
@@ -29,16 +25,22 @@ typedef struct {
 
 // Forward declarations of functions, that all platforms need to implement
 internal SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator);
-internal SubProcConsoleState subproc_get_console_state(void);
-internal void subproc_set_console_state(SubProcConsoleState state);
 internal void subproc_init(void);
 
 
-global SubProcConsoleState subproc_initial_console_state;
-global SubProcStdHandle subproc_stdin;
-global SubProcStdHandle subproc_stdout;
-global SubProcStdHandle subproc_stderr;
+global TermState subproc_term_state;
 
+
+internal void subproc_init(void)
+{
+	subproc_term_state = term_current_state;
+    term_add_mode(TERM_MODE_VPROC);
+}
+
+internal void subproc_deinit(void)
+{
+	term_set_state(subproc_term_state);
+}
 
 internal SubProcRes subproc_exec(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
 {
@@ -65,7 +67,7 @@ internal void subproc_print_output(AIL_Str out_str)
     };
     // @Note: Certain ANSI escape codes may change the console state (i.e. changing color mode)
     // thus we need to save the previous state and restore it after printing is done
-    SubProcConsoleState state = subproc_get_console_state();
+    TermState state = term_current_state;
     while (out.len) {
         AIL_SV_Find_Of_Res res = ail_sv_find_of(out, forbidden_seqs, AIL_ARRLEN(forbidden_seqs));
         if (res.sv_idx < 0) {
@@ -79,52 +81,14 @@ internal void subproc_print_output(AIL_Str out_str)
             out = ail_sv_offset(out, res.sv_idx + forbidden_seqs[res.needle_idx].len);
         }
     }
-    subproc_set_console_state(state);
+    term_set_state(state);
 }
-
-internal void subproc_deinit(void)
-{
-    subproc_set_console_state(subproc_initial_console_state);
-}
-
 
 
 #if defined(_WIN32) || defined(__WIN32__)
 //////////////////////////
 // Windows Implementation
 //////////////////////////
-
-internal SubProcConsoleState subproc_get_console_state(void)
-{
-    SubProcConsoleState res;
-    AIL_ASSERT(GetConsoleMode(subproc_stdin,  &res.in_mode));
-    AIL_ASSERT(GetConsoleMode(subproc_stdout, &res.out_mode));
-    AIL_ASSERT(GetConsoleMode(subproc_stderr, &res.err_mode));
-    return res;
-}
-
-internal void subproc_set_console_state(SubProcConsoleState state)
-{
-    AIL_ASSERT(SetConsoleMode(subproc_stdin,  state.in_mode));
-    AIL_ASSERT(SetConsoleMode(subproc_stdout, state.out_mode));
-    AIL_ASSERT(SetConsoleMode(subproc_stdout, state.err_mode));
-}
-
-internal void subproc_init(void)
-{
-    subproc_stdin  = GetStdHandle(STD_INPUT_HANDLE);
-    subproc_stdout = GetStdHandle(STD_OUTPUT_HANDLE);
-    subproc_stderr = GetStdHandle(STD_ERROR_HANDLE);
-    AIL_ASSERT(subproc_stdin  != INVALID_HANDLE_VALUE);
-    AIL_ASSERT(subproc_stdout != INVALID_HANDLE_VALUE);
-    AIL_ASSERT(subproc_stderr != INVALID_HANDLE_VALUE);
-
-    SubProcConsoleState state = subproc_get_console_state();
-    subproc_initial_console_state = state;
-    state.out_mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    state.err_mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    subproc_set_console_state(state);
-}
 
 // Code mostly adapted from the following documentation (with lots of experimentation until it worked properly):
 // - https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session
@@ -255,36 +219,6 @@ done:
 ////////////////////////
 // POSIX Implementation
 ////////////////////////
-
-global struct termios subproc_old_out_mode;
-
-
-SubProcConsoleState subproc_get_console_state(void)
-{
-    SubProcConsoleState attr;
-    tcgetattr(subproc_stdin, &attr);
-    return attr;
-}
-
-void subproc_set_console_state(SubProcConsoleState state)
-{
-    tcsetattr(subproc_stdin,  TCSANOW, &state);
-    tcsetattr(subproc_stdout, TCSANOW, &state);
-    tcsetattr(subproc_stderr, TCSANOW, &state);
-}
-
-void subproc_init(void)
-{
-    subproc_stdin  = STDIN_FILENO;
-    subproc_stdout = STDOUT_FILENO;
-    subproc_stderr = STDERR_FILENO;
-    subproc_initial_console_state = subproc_get_console_state();
-    SubProcConsoleState attr = subproc_initial_console_state;
-    attr.c_lflag &= ~(ICANON|ECHO);
-    attr.c_lflag |= ECHO;
-    subproc_set_console_state(attr);
-}
-
 
 SubProcRes subproc_exec_internal(AIL_DA(str) *argv, char *arg_str, AIL_Allocator allocator)
 {
